@@ -4,7 +4,7 @@ let restify = require('restify'),
 
 //set up restify server
 let server = restify.createServer();
-server.listen(process.env.PORT || 3000, () => {
+server.listen(process.env.PORT || 3000, function() {
     console.log('%s listening to %s', server.name, server.url);
 });
 
@@ -14,6 +14,6 @@ let bot = new builder.UniversalBot(connector);
 server.post('/api/messages', connector.listen());
 
 //create bot dialogs
-bot.dialog('/', (session) => {
+bot.dialog('/', function(session) {
     session.send("Hello World!");
 });
