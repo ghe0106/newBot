@@ -9,7 +9,7 @@ server.listen(process.env.PORT || 3000, function() {
 });
 
 //create chat bot
-let connector = new builder.ChatConnector({appId: 'de2ae130-68e5-4e92-ac44-21f1f9520e74', appPassword: 'CFEJbz5qpFhu1qDakg7KJN2'});
+let connector = new builder.ChatConnector({appId: 'a986a103-1366-44cc-8f92-7e2d066081b0', appPassword: 'YDQ9cLT6omhjQK4pRQDizEd'});
 let bot = new builder.UniversalBot(connector);
 server.post('/api/messages', connector.listen());
 
