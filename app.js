@@ -7,7 +7,7 @@ var restify = require('restify');
 
 // Setup Restify Server
 var server = restify.createServer();
-server.listen(process.env.port || process.env.PORT || 3978, function () {
+server.listen(process.env.port || process.env.PORT || 3000, function () {
    console.log('%s listening to %s', server.name, server.url);
 });
 
@@ -23,37 +23,24 @@ server.post('/api/messages', connector.listen());
 // Bots Dialogs
 //=========================================================
 
-var intents = new builder.IntentDialog();
-bot.dialog('/', intents);
-
-intents.matches(/^change name/i, [
+bot.dialog('/', [
     function (session) {
-        session.beginDialog('/profile');
+        // call custom prompt
+        session.beginDialog('/meaningOfLife', {
+            prompt: "What's the meaning of life?", 
+            retryPrompt: "Sorry that's incorrect. Guess again."
+        });
     },
     function (session, results) {
-        session.send('Ok... Changed your name to %s', session.userData.name);
-    }
-]);
-
-intents.onDefault([
-    function (session, args, next) {
-        if (!session.userData.name) {
-            session.beginDialog('/profile');
+        // Check their answer
+        if (results.response) {
+            session.send("That's correct! The meaning of life is 42.");
         } else {
-            next();
+            session.send("Sorry you couldn't figure it out. Everyone knows that the meaning of life is 42.");
         }
-    },
-    function (session, results) {
-        session.send('Hello %s!', session.userData.name);
     }
 ]);
 
-bot.dialog('/profile', [
-    function (session) {
-        builder.Prompts.text(session, 'Hi! What is your name?');
-    },
-    function (session, results) {
-        session.userData.name = results.response;
-        session.endDialog();
-    }
-]);
+bot.dialog('/meaningOfLife', builder.DialogAction.validatedPrompt(builder.PromptType.text, function (response) {
+    return response === '42';
+}));
