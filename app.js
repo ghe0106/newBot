@@ -1,46 +1,141 @@
-var builder = require('botbuilder');
-var restify = require('restify');
+// Requirements
+"use strict";
 
-//=========================================================
-// Bot Setup
-//=========================================================
+/*
+  REST-enabled version of LUIS alarm demo
+*/
 
-// Setup Restify Server
-var server = restify.createServer();
-server.listen(process.env.port || process.env.PORT || 3000, function () {
-   console.log('%s listening to %s', server.name, server.url);
+const restify = require('restify');
+const builder = require('botbuilder');
+
+
+// Set up restify server
+const server = restify.createServer();
+server.listen(process.env.PORT || 3000, function() {
+  console.log('%s listening to %s', server.name, server.url);
 });
 
-// Create chat bot
-var connector = new builder.ChatConnector({
-    appId: 'a986a103-1366-44cc-8f92-7e2d066081b0',
-    appPassword: 'YDQ9cLT6omhjQK4pRQDizEd'
+const connector = new builder.ChatConnector({
+  appId: process.env.MSFT_APP_ID,
+  appPassword: process.env.MSFT_APP_SECRET
 });
-var bot = new builder.UniversalBot(connector);
+
+const bot = new builder.UniversalBot(connector);
+
+// Bot chat messages
 server.post('/api/messages', connector.listen());
 
-//=========================================================
-// Bots Dialogs
-//=========================================================
+// Web chat UI request
+server.get('/', restify.serveStatic({
+ directory: __dirname,
+ default: '/index.html'
+}));
 
-bot.dialog('/', [
-    function (session) {
-        // call custom prompt
-        session.beginDialog('/meaningOfLife', {
-            prompt: "What's the meaning of life?", 
-            retryPrompt: "Sorry that's incorrect. Guess again."
-        });
+// Create LUIS recognizer that points at our model and add it as the root '/' dialog for our Cortana Bot.
+var model = process.env.model || 'https://api.projectoxford.ai/luis/v1/application?id=c413b2ef-382c-45bd-8ff0-f76d60e2a821&subscription-key=6d0966209c6e4f6b835ce34492f3e6d9&q=';
+var recognizer = new builder.LuisRecognizer(model);
+var dialog = new builder.IntentDialog({ recognizers: [recognizer] });
+bot.dialog('/', dialog);
+
+// Add intent handlers
+dialog.matches('builtin.intent.alarm.set_alarm', [
+    function (session, args, next) {
+        // Resolve and store any entities passed from LUIS.
+        var title = builder.EntityRecognizer.findEntity(args.entities, 'builtin.alarm.title');
+        var time = builder.EntityRecognizer.resolveTime(args.entities);
+        var alarm = session.dialogData.alarm = {
+          title: title ? title.entity : null,
+          timestamp: time ? time.getTime() : null
+        };
+
+        // Prompt for title
+        if (!alarm.title) {
+            builder.Prompts.text(session, 'What would you like to call your alarm?');
+        } else {
+            next();
+        }
+    },
+    function (session, results, next) {
+        var alarm = session.dialogData.alarm;
+        if (results.response) {
+            alarm.title = results.response;
+        }
+
+        // Prompt for time (title will be blank if the user said cancel)
+        if (alarm.title && !alarm.timestamp) {
+            builder.Prompts.time(session, 'What time would you like to set the alarm for?');
+        } else {
+            next();
+        }
     },
     function (session, results) {
-        // Check their answer
+        var alarm = session.dialogData.alarm;
         if (results.response) {
-            session.send("That's correct! The meaning of life is 42.");
+            var time = builder.EntityRecognizer.resolveTime([results.response]);
+            alarm.timestamp = time ? time.getTime() : null;
+        }
+
+        // Set the alarm (if title or timestamp is blank the user said cancel)
+        if (alarm.title && alarm.timestamp) {
+            // Save address of who to notify and write to scheduler.
+            alarm.address = session.message.address;
+            alarms[alarm.title] = alarm;
+
+            // Send confirmation to user
+            var date = new Date(alarm.timestamp);
+            var isAM = date.getHours() < 12;
+            session.send('Creating alarm named "%s" for %d/%d/%d %d:%02d%s',
+                alarm.title,
+                date.getMonth() + 1, date.getDate(), date.getFullYear(),
+                isAM ? date.getHours() : date.getHours() - 12, date.getMinutes(), isAM ? 'am' : 'pm');
         } else {
-            session.send("Sorry you couldn't figure it out. Everyone knows that the meaning of life is 42.");
+            session.send('Ok... no problem.');
         }
     }
 ]);
 
-bot.dialog('/meaningOfLife', builder.DialogAction.validatedPrompt(builder.PromptType.text, function (response) {
-    return response === '42';
-}));
+dialog.matches('builtin.intent.alarm.delete_alarm', [
+    function (session, args, next) {
+        // Resolve entities passed from LUIS.
+        var title;
+        var entity = builder.EntityRecognizer.findEntity(args.entities, 'builtin.alarm.title');
+        if (entity) {
+            // Verify its in our set of alarms.
+            title = builder.EntityRecognizer.findBestMatch(alarms, entity.entity);
+        }
+
+        // Prompt for alarm name
+        if (!title) {
+            builder.Prompts.choice(session, 'Which alarm would you like to delete?', alarms);
+        } else {
+            next({ response: title });
+        }
+    },
+    function (session, results) {
+        // If response is null the user canceled the task
+        if (results.response) {
+            delete alarms[results.response.entity];
+            session.send("Deleted the '%s' alarm.", results.response.entity);
+        } else {
+            session.send('Ok... no problem.');
+        }
+    }
+]);
+
+dialog.onDefault(builder.DialogAction.send("I'm sorry I didn't understand. I can only create & delete alarms."));
+
+// Very simple alarm scheduler
+var alarms = {};
+setInterval(function () {
+    var now = new Date().getTime();
+    for (var key in alarms) {
+        var alarm = alarms[key];
+        if (now >= alarm.timestamp) {
+            var msg = new builder.Message()
+                .address(alarm.address)
+                .text("Here's your '%s' alarm.", alarm.title);
+            bot.send(msg);
+            delete alarms[key];
+        }
+    }
+}, 15000);
