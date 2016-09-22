@@ -86,5 +86,6 @@ bot.dialog('/profile', [
       session.userData.choice = results.response.entity;
       session.send("So you're %s and have £%s in your fund, of which you'd like to take £%s straight away, and use the remaining amount to buy a %s income.",
         session.userData.age, session.userData.pensionPot, session.userData.lumpSum, session.userData.choice);
+        session.endDialog();
     }
 ]);
