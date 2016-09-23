@@ -1,7 +1,8 @@
+// Requirements
+"use strict";
+
 var builder = require('botbuilder');
 var restify = require('restify');
-var https = require('https');
-var getQuote = require('./QuoteEngine');
 
 //=========================================================
 // Bot Setup
@@ -18,10 +19,6 @@ var connector = new builder.ChatConnector({
   appId: process.env.MSFT_APP_ID,
   appPassword: process.env.MSFT_APP_SECRET
 });
-
-// console testing? uncomment the next line and comment out the server.post line below
-//connector = new builder.ConsoleConnector().listen();
-
 var bot = new builder.UniversalBot(connector);
 server.post('/api/messages', connector.listen());
 
@@ -35,10 +32,8 @@ server.get('/', restify.serveStatic({
 // Bots Dialogs
 //=========================================================
 
-// Create LUIS recognizer that points at our model and add it as the root '/' dialog for our Cortana Bot.
-var model = process.env.model || 'https://api.projectoxford.ai/luis/v1/application?id=c413b2ef-382c-45bd-8ff0-f76d60e2a821&subscription-key=6d0966209c6e4f6b835ce34492f3e6d9&q=';
-var recognizer = new builder.LuisRecognizer(model);
-var intents = new builder.IntentDialog({ recognizers: [recognizer] });
+
+var intents = new builder.IntentDialog();
 bot.dialog('/', intents);
 
 
@@ -47,7 +42,6 @@ intents.matches(/^start again/i, [
         session.beginDialog('/profile');
     }
 ]);
-
 
 intents.onDefault([
     function (session, args, next) {
@@ -58,7 +52,7 @@ intents.onDefault([
         }
     },
     function (session, results) {
-        session.send("If you like, you can try changing some of your choices and I'll recalculate how much you would get.");
+        session.send('Based on your answers, you could get £12345 per year.');
     }
 ]);
 
@@ -78,10 +72,10 @@ bot.dialog('/profile', [
       next();
     },
     function (session, results, next) {
-      builder.Prompts.text(session, 'What percentage of this would you like to take out straight away?');
+      builder.Prompts.text(session, 'How much of this would you like to take out straight away, in pounds?');
     },
     function (session, results, next) {
-      session.userData.lumpSumPcg = results.response;
+      session.userData.lumpSum = results.response;
       next();
     },
     function (session, results, next) {
@@ -90,22 +84,8 @@ bot.dialog('/profile', [
     },
     function (session, results, next) {
       session.userData.choice = results.response.entity;
-      // Call service
-      getQuote(session.userData.choice, session.userData.age, session.userData.pensionPot, session.userData.lumpSumPcg, function(error, response) {
-        session.send("So you're %s and have £%s in your fund, of which you'd like to take %s percent straight away, and use the remaining amount to buy a %s income.",
-          session.userData.age, session.userData.pensionPot, session.userData.lumpSumPcg, session.userData.choice);
-        session.send('Based on your answers, you could get an income of £%f per year (£%f after tax).', response.grossIncome, response.netIncome);
-        if (response.cashAmount > 0) {
-          if (response.cashTax > 0) {
-            session.send('This is based on taking £%f as a lump sum (£%f after tax) and using the rest to buy a %s income.',
-              response.cashAmount, (response.cashAmount - response.cashTax), session.userData.choice);
-          } else {
-            session.send('This is based on taking £%f as a lump sum and using the rest to buy a %s income.',
-              response.cashAmount, session.userData.choice);
-          }
-        }
-        session.userData.lastQuote = response;
-        session.endDialogWithResult(results);
-      });
+      session.send("So you're %s and have £%s in your fund, of which you'd like to take £%s straight away, and use the remaining amount to buy a %s income.",
+        session.userData.age, session.userData.pensionPot, session.userData.lumpSum, session.userData.choice);
+        session.endDialog();
     }
 ]);
